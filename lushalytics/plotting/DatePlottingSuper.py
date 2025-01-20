@@ -74,6 +74,9 @@ class DatePlotter():
 
     def drop_incomplete_last_period_if_requested(self, date_col):
         
+        self.df['period_end'] = pd.to_datetime(self.df['period_end']).dt.date
+        self.df[date_col] = pd.to_datetime(self.df[date_col]).dt.date
+        
         max_period = self.df['period_end'].max()
         max_date = self.df[date_col].max()
         if max_date < max_period:
