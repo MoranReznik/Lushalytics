@@ -4,3 +4,4 @@ from .DatePlotingClasses import (
     DateBarPlotter,
     LegendPlotter,
 )
+from .CategoricalBarPlot import CatBarPlot

@@ -16,12 +16,12 @@ df = pd.DataFrame({
     "filter_col_2": ["c","c","d","d","c","c","a","b"]
 })
 
-TEST_CREATION_TITLE_FIGSIZE = True
+TEST_CREATION_TITLE_FIGSIZE = False
 TEST_SORTING = False
 TEST_VERICALITY = False
 TEST_FILTERS = False
 TEST_AGGREGATION = False
-TEST_SEGMENTATION = False
+TEST_SEGMENTATION = True
 
 
 if TEST_CREATION_TITLE_FIGSIZE:
@@ -100,19 +100,51 @@ if TEST_AGGREGATION:
 
 if TEST_SEGMENTATION:
     bar_plot = CatBarPlot(df, title="Segmentation Tests")
+
     combos = [
-        dict(segment="filter_col_1", agg="sum",           sorting="value", reverse=False, orientation="v", filters=None,                               subtitle="seg=filter_col_1 | sum | v"),
-        dict(segment="filter_col_2", agg="sum",           sorting="label", reverse=True,  orientation="h", filters=None,                               subtitle="seg=filter_col_2 | sort=label, reverse | h"),
-        dict(segment="filter_col_1", agg="wmean:count",   sorting="value", reverse=False, orientation="v", filters={"category": ["A","B","D"]},       subtitle="seg=filter_col_1 | wmean:count | A,B,D"),
+        dict(segment="filter_col_1", agg="sum",         sorting="value", reverse=False, orientation="v",
+             filters=None, subtitle="STACK • seg=filter_col_1 | sum | v", segment_mode="stack"),
+        dict(segment="filter_col_2", agg="sum",         sorting="label", reverse=True,  orientation="h",
+             filters=None, subtitle="STACK • seg=filter_col_2 | sort=label, reverse | h", segment_mode="stack"),
+        dict(segment="filter_col_1", agg="wmean:count", sorting="value", reverse=False, orientation="v",
+             filters={"category": ["A","B","D"]}, subtitle="STACK • seg=filter_col_1 | wmean:count | A,B,D", segment_mode="stack"),
+        dict(segment="filter_col_1", agg="sum",         sorting="value", reverse=False, orientation="v",
+             filters=None, subtitle="GROUP • seg=filter_col_1 | sum | v", segment_mode="group"),
+        dict(segment="filter_col_2", agg="sum",         sorting="label", reverse=True,  orientation="h",
+             filters=None, subtitle="GROUP • seg=filter_col_2 | sort=label, reverse | h", segment_mode="group"),
+        dict(segment="filter_col_1", agg="wmean:count", sorting="value", reverse=False, orientation="v",
+             filters={"category": ["A","B","D"]}, subtitle="GROUP • seg=filter_col_1 | wmean:count | A,B,D", segment_mode="group"),
     ]
-    fig = make_subplots(rows=len(combos), cols=1, vertical_spacing=0.08,
-                        subplot_titles=[c["subtitle"] for c in combos])
-    for i, c in enumerate(combos, 1):
-        f = bar_plot.plot("category", "value",
-                          agg=c["agg"], sorting=c["sorting"], reverse=c["reverse"],
-                          figsize=figsize, orientation=c["orientation"],
-                          filters=c["filters"], segment=c["segment"])
-        for tr in f.data:
-            fig.add_trace(tr, row=i, col=1)
-    fig.update_layout(barmode="stack")
-    fig.show()
+
+    combos_stack = [c for c in combos if c["segment_mode"] == "stack"]
+    combos_group = [c for c in combos if c["segment_mode"] == "group"]
+
+    fig_stack = make_subplots(
+        rows=len(combos_stack), cols=1, vertical_spacing=0.08,
+        subplot_titles=[c["subtitle"] for c in combos_stack]
+    )
+    for i, c in enumerate(combos_stack, 1):
+        f = bar_plot.plot(
+            "category", "value",
+            agg=c["agg"], sorting=c["sorting"], reverse=c["reverse"],
+            figsize=figsize, orientation=c["orientation"], filters=c["filters"],
+            segment=c["segment"], segment_mode=c["segment_mode"]
+        )
+        for tr in f.data: fig_stack.add_trace(tr, row=i, col=1)
+    fig_stack.update_layout(barmode="stack")
+    fig_stack.show()
+
+    fig_group = make_subplots(
+        rows=len(combos_group), cols=1, vertical_spacing=0.08,
+        subplot_titles=[c["subtitle"] for c in combos_group]
+    )
+    for i, c in enumerate(combos_group, 1):
+        f = bar_plot.plot(
+            "category", "value",
+            agg=c["agg"], sorting=c["sorting"], reverse=c["reverse"],
+            figsize=figsize, orientation=c["orientation"], filters=c["filters"],
+            segment=c["segment"], segment_mode=c["segment_mode"]
+        )
+        for tr in f.data: fig_group.add_trace(tr, row=i, col=1)
+    fig_group.update_layout(barmode="group")
+    fig_group.show()
