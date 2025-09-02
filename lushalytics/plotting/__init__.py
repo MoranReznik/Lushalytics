@@ -1,1 +1,6 @@
-from .DatePlotingClasses import DateLinePlotter, ErrorDateLinePlotter, DateBarPlotter
+from .DatePlotingClasses import (
+    DateLinePlotter,
+    ErrorDateLinePlotter,
+    DateBarPlotter,
+    LegendPlotter,
+)

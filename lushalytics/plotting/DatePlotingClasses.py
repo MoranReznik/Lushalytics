@@ -1,185 +1,232 @@
 import plotly.graph_objects as go
 from .DatePlottingSuper import DatePlotter
+import pandas as pd 
 
 class DateLinePlotter(DatePlotter):
-    """
-    A class for creating a customizable line plot comparing metrics over time with hover functionality.
-    
-    Initialization Parameters:
-    ---------------------------
-    df : pandas.DataFrame
-        The DataFrame containing the data to be used for plotting.
-    title : str
-        The title of the plot.
-    
-    plot() Method Parameters:
-    --------------------------
-    date_col : str
-        The name of the column containing dates for the x-axis.
-    target_col : str or list
-        The name(s) of the column(s) representing the metric(s) to plot on the y-axis.
-    filters : dict, optional, default=None
-        A dictionary where keys are column names and values are lists of values to keep before plotting.
-    segment_col : str, optional, default=None
-        The name of the column to segment data into separate traces on the plot.
-        if this is used, only a single meric should be passed as 'target+col'.
-    aggregator : str, optional, default='avg'
-        Aggregation method for the target metric. Options: 'avg', 'sum', or 'weighted_avg'.
-    count_col : str, optional, default=None
-        The name of the column used for weighting when aggregator='weighted_avg'.
-    granularity : str, optional, default='daily'
-        The time granularity for grouping data. Options: 'daily', 'weekly', or 'monthly'.
-    incomplete_drop : bool, optional, default=False
-        If True, removes data from the last incomplete period (e.g., an incomplete week or month).
-    days_back : int, optional, default=30
-        The number of days to include in the plot, starting from today.
-    
-    Usage:
-    ------
-    1. Initialize the class with a DataFrame and a plot title.
-    2. Call the plot() method with the required columns and additional configuration options to generate the plot.
-    
-    Returns:
-    --------
-    A Plotly figure object representing the generated line plot.
-    """
+
     def __init__(self, df, title):
-        
+
         super().__init__(df, title)
-
-    def add_scatter_trace(self, fig, df, x_name, y_name, name, color_idx):
-            fig.add_trace(go.Scatter(
-                x=df[x_name],
-                y=df[y_name],
-                mode='lines+markers',
-                line=dict(color=self.colors[color_idx], width=4),  # Line color and width
-                marker=dict(size=10),  
-                line_shape='spline',
-                name=name,
-                text=df['hover_text'],
-                hoverinfo='text'
-            ))
-
-    def test_parameters_for_complience(self, aggregator, segment_col, target_col, count_col):
         
-        if (aggregator not in ['avg', 'sum', 'weighted_avg']) and aggregator:
-            raise ValueError("Invalid aggregator. Choose from 'avg', 'sum', or 'weighted_avg'.")
 
-        if segment_col and isinstance(target_col, list):
+    def add_scatter_trace(self, fig, df, x_name, y_name, name, color, hover_text):
+        fig.add_trace(go.Scatter(
+            x=df[x_name],
+            y=df[y_name],
+            mode='lines+markers',
+            line=dict(color=color, width=4),
+            marker=dict(size=10),  
+            line_shape='spline',
+            name=name.replace("_", " "),
+            hovertext=hover_text,
+            hovertemplate='%{hovertext}<extra></extra>'
+        ))
+
+    def _create_trace_tooltip(self, trace_df, granularity, trace_name, value_col, other_cols_to_include=None):
+        """Generates a formatted hover tooltip for a specific trace."""
+
+        trace_df = trace_df.copy()
+        trace_df['period_start'] = pd.to_datetime(trace_df['period_start'])
+        trace_df['period_end'] = pd.to_datetime(trace_df['period_end'])
+
+        if granularity != 'daily':
+            date_part = trace_df['period_start'].dt.strftime('%b %d') + ' → ' + trace_df['period_end'].dt.strftime('%b %d, %Y')
+        else:
+            date_part = trace_df['period_start'].dt.strftime('%b %d, %Y')
+            
+        trace_name_title = self.convert_str_2_title(trace_name)
+        value_formatted = trace_df[value_col].round(2).apply(lambda x: f"{x:,.2f}" if isinstance(x, float) else f"{x:,}")
+        hover_text = date_part + '<br>' + trace_name_title + ': ' + value_formatted.astype(str)
+        
+        if other_cols_to_include:
+            for col in other_cols_to_include:
+                if col in trace_df.columns:
+                    col_title = self.convert_str_2_title(col)
+                    col_val = trace_df[col].round(2).apply(lambda x: f"{x:,.2f}" if isinstance(x, float) else f"{x:,}")
+                    hover_text = hover_text + '<br>' + col_title + ': ' + col_val.astype(str)
+
+        return hover_text
+
+    def test_parameters_for_complience(
+        self,
+        aggregator,
+        segment_col,
+        target_col,
+        count_col,
+        period_aggregator=None,
+        count_period_aggregator=None
+    ):
+        valid = {'avg', 'sum', 'weighted_avg', None}
+        if aggregator not in valid:
+            raise ValueError("aggregator must be 'avg', 'sum', 'weighted_avg' or None")
+        if period_aggregator not in valid:
+            raise ValueError("period_aggregator must be 'avg', 'sum', or 'weighted_avg'")
+        valid_cnt = {'sum', 'mean', None}
+        if count_period_aggregator not in valid_cnt:
+            raise ValueError("count_period_aggregator must be 'sum', 'mean', or None")
+        if segment_col and isinstance(target_col, list) and len(target_col) > 1:
             raise ValueError("Cannot add multiple target columns when segmentation is used.")
-
-        if aggregator == 'weighted_avg' and not count_col:
-            raise ValueError("count_col must be provided for weighted_avg aggregator.")
-
-    def convert_str_2_title(self, s):
-        return s.replace('_',' ').title()
+        if aggregator == 'weighted_avg':
+            if isinstance(target_col, str) and not isinstance(count_col, str):
+                raise ValueError("count_col must be a string for a single target")
+            if isinstance(target_col, list):
+                ok = isinstance(count_col, list) and len(count_col) == len(target_col)
+                if not ok:
+                    raise ValueError("count_col list must match target_col list length")
     
-    def plot(self, 
-             date_col, 
-             target_col, 
-             filters=None, 
-             segment_col=None, 
-             aggregator=None, 
-             count_col=None, 
-             granularity='daily', 
-             incomplete_drop=False,
-             days_back=30,
-             figsize=[700, 271]):
+    def plot(
+        self,
+        date_col,
+        target_col,
+        filters=None,
+        segment_col=None,
+        aggregator=None,
+        period_aggregator=None,
+        count_col=None,
+        count_period_aggregator='mean',
+        granularity='daily',
+        incomplete_drop=False,
+        days_back=30,
+        figsize=[700, 271],
+        y_range=None
+    ):
 
-        self.test_parameters_for_complience(aggregator, segment_col, target_col, count_col)
-        
+        target_cols = [target_col] if isinstance(target_col, str) else target_col
+        # We need the list of count columns for tooltip generation later
+        all_count_cols = []
+        if isinstance(count_col, str):
+            all_count_cols = [count_col]*len(target_cols)
+        elif isinstance(count_col, list):
+            all_count_cols = count_col
+
+        self.test_parameters_for_complience(
+            aggregator, segment_col, target_cols, all_count_cols,
+            period_aggregator, count_period_aggregator
+        )
+
         super().apply_filters(filters)
-
         super().trim_to_date_range(days_back, date_col)
 
-        super().convert_to_date_granularity(date_col ,granularity)
-        
-        target_cols = [target_col] if isinstance(target_col, str) else target_col
+        group_cols = [date_col] + ([segment_col] if segment_col else [])
 
-        # Drop incomplete last period if requested
+        if aggregator == 'sum':
+            agg_dict = {col: 'sum' for col in target_cols}
+            agg_dict.update({col: 'sum' for col in all_count_cols})
+            agg_df = self.df.groupby(group_cols, as_index=False).agg(agg_dict)
+        elif aggregator == 'avg':
+            agg_dict = {col: 'mean' for col in target_cols}
+            if all_count_cols:
+                agg_dict.update({col: 'sum' for col in all_count_cols})
+            agg_df = self.df.groupby(group_cols, as_index=False).agg(agg_dict)
+        elif aggregator == 'weighted_avg':
+            cc_list = count_col if isinstance(count_col, list) else [count_col] * len(target_cols)
+            for tc, cc in zip(target_cols, cc_list):
+                denom = self.df.groupby(group_cols)[cc].transform('sum')
+                self.df[f'{tc}_w'] = self.df[tc] * self.df[cc] / denom
+            agg_dict = {f'{tc}_w': 'sum' for tc in target_cols}
+            agg_dict.update({cc: 'sum' for cc in set(all_count_cols)})
+            agg_df = self.df.groupby(group_cols, as_index=False).agg(agg_dict)
+            agg_df.rename(columns={f'{tc}_w': tc for tc in target_cols}, inplace=True)
+        self.df = agg_df
+
+        super().convert_to_date_granularity(date_col, granularity)
+
         if incomplete_drop and granularity in ['weekly', 'monthly']:
             super().drop_incomplete_last_period_if_requested(date_col)
-
-        group_cols = ['period','period_start'] + ([segment_col] if segment_col else [])
         
-        # Aggregation
-        if aggregator == 'sum':
-            sum_per_date = self.df.groupby(
-                                [date_col] + ([segment_col] if segment_col else []),
-                                as_index=False
-                            ).agg({
-                                **{col: lambda x: x.sum(min_count=1) for col in target_cols},
-                                'period': 'first',
-                                'period_start': 'first'
-                            })
-            agg_df = sum_per_date.groupby(group_cols, as_index=False)[target_cols].mean()
-        elif aggregator == 'avg':
-            agg_df = self.df.groupby(group_cols, as_index=False).agg({
-                        **{col: 'mean' for col in target_cols},
-                        count_col: 'sum'
-                    })
-        elif aggregator == 'weighted_avg':
-            self.df['weights'] = self.df[count_col] / self.df.groupby(group_cols)[count_col].transform(lambda x: x.sum(min_count=1))
-            for tc in target_cols:
-                self.df[tc + '_weighted'] = self.df[tc] * self.df['weights']
-            weighted_cols = [tc + '_weighted' for tc in target_cols]
-            agg_df = self.df.groupby(group_cols, as_index=False).agg({
-                    **{col: lambda x: x.sum(min_count=1) for col in weighted_cols},
-                    count_col: 'sum'
-                })
-            for tc in target_cols:
-                agg_df[tc] = agg_df[tc + '_weighted']
-                agg_df.drop(columns=tc + '_weighted', inplace=True)
-        else:
-            if granularity != 'daily':
-                raise ValueError('must pick an aggregator when date granularity is not daily')
-            else:
-                agg_df = self.df
+        group_cols = ['period_start','period_end'] + ([segment_col] if segment_col else [])
+        if granularity != 'daily':
+            if period_aggregator == 'sum':
+                agg_df = self.df.groupby(group_cols, as_index=False).agg(
+                    {col: 'sum' for col in target_cols}
+                )
+            elif period_aggregator == 'avg':
+                agg_dict = {col: 'mean' for col in target_cols}
+                if all_count_cols:
+                    agg_dict.update({col: 'sum' for col in all_count_cols})
+                agg_df = self.df.groupby(group_cols, as_index=False).agg(agg_dict)
+            elif period_aggregator == 'weighted_avg':
+                cc_list = count_col if isinstance(count_col, list) else [count_col] * len(target_cols)
+                for tc, cc in zip(target_cols, cc_list):
+                    denom = self.df.groupby(group_cols)[cc].transform('sum')
+                    self.df[f'{tc}_w'] = self.df[tc] * self.df[cc] / denom
+                agg_dict = {f'{tc}_w': 'sum' for tc in target_cols}
+                agg_choice = count_period_aggregator or 'mean'
+                agg_dict.update({cc: agg_choice for cc in set(all_count_cols)})
+                agg_df = self.df.groupby(group_cols, as_index=False).agg(agg_dict)
+                agg_df.rename(columns={f'{tc}_w': tc for tc in target_cols}, inplace=True)
 
-        # compile text for hover panel
-        agg_df = self.compile_hover_tooltip(agg_df, date_col, granularity)
-
-        # Convert period back to a suitable date representation for plotting
-        # We'll use the start of the period for the x-axis
         agg_df[date_col] = agg_df['period_start']
         agg_df = agg_df.sort_values(date_col)
-        agg_df.drop(columns='period', inplace=True)
         self._test = agg_df
         
         fig = go.Figure()
+        
         if segment_col:
-            for i, segment in enumerate(agg_df[segment_col].unique()):
-                seg_data = agg_df[agg_df[segment_col] == segment]
-                self.add_scatter_trace(fig, seg_data, date_col, target_cols[0], str(segment) ,i)
-        else:
-            for i, tc in enumerate(target_cols):
-                self.add_scatter_trace(fig, agg_df, date_col, tc, str(tc), i)
+            
+            sorted_segments = sorted(agg_df[segment_col].unique())
+            
+            for segment, color in zip(sorted_segments, self.colors):
+                seg_data = agg_df[agg_df[segment_col] == segment].copy()
                 
-        # Update layout
+                hover_text = self._create_trace_tooltip(
+                    trace_df=seg_data,
+                    granularity=granularity,
+                    trace_name=str(segment),
+                    value_col=target_cols[0],
+                    other_cols_to_include=all_count_cols
+                )
+                self.add_scatter_trace(fig, seg_data, date_col, target_cols[0], str(segment), color, hover_text)
+        else:
+
+            for i, tc in enumerate(sorted(target_cols)):
+                color = self.colors[i % len(self.colors)]
+                
+                current_count_col_for_tooltip = []
+                if aggregator in ['weighted_avg', 'avg']:
+                    if isinstance(count_col, str):
+                        # Case 1: A single, shared count_col string. Apply to all traces.
+                        current_count_col_for_tooltip = [count_col]
+                    elif isinstance(count_col, list) and len(count_col) > i:
+                        # Case 2: A list of count_cols. Apply the corresponding one.
+                        current_count_col_for_tooltip = [count_col[i]]
+
+                hover_text = self._create_trace_tooltip(
+                    trace_df=agg_df,
+                    granularity=granularity,
+                    trace_name=str(tc),
+                    value_col=tc,
+                    other_cols_to_include=current_count_col_for_tooltip
+                )
+                self.add_scatter_trace(fig, agg_df, date_col, tc, str(tc), color, hover_text)
+                
         fig.update_layout(
-            barmode='stack',
             font=dict(family="Poppins-Medium, sans-serif"),
             plot_bgcolor="white", 
             title=self.title_dict,
-            yaxis = self.axis_dict,
-            margin = dict(l=self.n+10, r=0, t=self.n, b=self.n),
-            legend = self.legend_dict,
-            legend_title=segment_col,
+            yaxis=self.axis_dict,
+            margin=dict(l=self.n+10, r=0, t=self.n, b=self.n),
+            legend=self.legend_dict,
+            legend_title=self.convert_str_2_title(segment_col),
             hoverlabel=dict(align="left"),
             width=figsize[0],
             height=figsize[1]
         )
-        if (agg_df.shape[0] / len(fig.data)) < 10:
+
+        if y_range is not None:
+            fig.update_yaxes(range=y_range)
+        
+        if len(fig.data) > 0 and (agg_df.shape[0] / len(fig.data)) < 10:
             fig.update_layout(
                         xaxis={**self.axis_dict, 
-                               "tickformat": "%b %d",  # Adds month-day formatting to the x-axis
-                               'tickvals': agg_df[date_col],  # Ensure these match the x-axis data
-                               'ticktext': agg_df[date_col].dt.strftime("%b %d")},  # Format as 'Dec-14'
+                               "tickformat": "%b %d",
+                               'tickvals': agg_df[date_col].unique(),
+                               'ticktext': pd.to_datetime(agg_df[date_col].unique()).strftime("%b %d")},
                     )
         else:
             fig.update_layout(
                         xaxis={**self.axis_dict, 
-                               "tickformat": "%b %d"}  # Adds month-day formatting to the x-axis
+                               "tickformat": "%b %d"}
                     )
         return fig
     
@@ -257,20 +304,16 @@ class ErrorDateLinePlotter(DatePlotter):
         return s.replace('_',' ').title()
         
     def compile_hover_tooltip(self, agg_df, date_col, granularity):
-        
         if granularity != 'daily':
-            start = agg_df['period'].astype(str).str.split('/').str[0]
-            end = agg_df['period'].astype(str).str.split('/').str[1]
+            start = pd.to_datetime(agg_df['period_start']).dt.strftime('%Y-%m-%d')
+            end = pd.to_datetime(agg_df['period_end']).dt.strftime('%Y-%m-%d')
             agg_df['hover_text'] = start + ' → ' + end
         else:
-            agg_df['hover_text'] = agg_df['period'].astype(str).str.split('/').str[0]
-            
-        for c in [x for x in agg_df.columns if x not in [date_col,'hover_text','period','period_start']]:
+            agg_df['hover_text'] = pd.to_datetime(agg_df['period_start']).dt.strftime('%Y-%m-%d')
+
+        for c in [x for x in agg_df.columns if x not in [date_col, 'hover_text', 'period_end', 'period_start']]:
             c_title = self.convert_str_2_title(c)
-            if agg_df[c].dtype in ['float64', 'int64']:
-                val = agg_df[c].round(2).apply(lambda x: "{:,}".format(x))
-            else:
-                val = agg_df[c].astype(str)
+            val = agg_df[c].round(2).apply(lambda x: "{:,}".format(x)) if agg_df[c].dtype in ['float64', 'int64'] else agg_df[c].astype(str)
             agg_df['hover_text'] = agg_df['hover_text'] + '<br>' + c_title + ': ' + val
 
         return agg_df
@@ -285,7 +328,8 @@ class ErrorDateLinePlotter(DatePlotter):
              incomplete_drop=False,
              days_back=30,
              y_range=[0,1],
-             figsize=[700, 271]):
+             figsize=[700, 271]
+             ):
         
         # Apply filters
         self.apply_filters(filters)
@@ -300,7 +344,7 @@ class ErrorDateLinePlotter(DatePlotter):
         if incomplete_drop and granularity in ['weekly', 'monthly']:
             self.drop_incomplete_last_period_if_requested(date_col)
 
-        group_cols = ['period','period_start']
+        group_cols = ['period_start','period_end']
 
         # Aggregation
         self.df['weights'] = self.df[count_col] / self.df.groupby(group_cols)[count_col].transform('sum')
@@ -318,8 +362,6 @@ class ErrorDateLinePlotter(DatePlotter):
         # Convert period back to a suitable date representation for plotting
         # We'll use the start of the period for the x-axis
         agg_df[date_col] = agg_df['period_start']
-        agg_df.drop(columns='period', inplace=True)
-
         agg_df['color'] = agg_df['sample_size'].apply(self.assign_color)
         
         self._test = agg_df
@@ -484,20 +526,16 @@ class DateBarPlotter(DatePlotter):
         return s.replace('_',' ').title()
     
     def compile_hover_tooltip(self, agg_df, date_col, granularity):
-        
         if granularity != 'daily':
-            start = agg_df['period'].astype(str).str.split('/').str[0]
-            end = agg_df['period'].astype(str).str.split('/').str[1]
+            start = pd.to_datetime(agg_df['period_start']).dt.strftime('%Y-%m-%d')
+            end = pd.to_datetime(agg_df['period_end']).dt.strftime('%Y-%m-%d')
             agg_df['hover_text'] = start + ' → ' + end
         else:
-            agg_df['hover_text'] = agg_df['period'].astype(str).str.split('/').str[0]
-            
-        for c in [x for x in agg_df.columns if x not in [date_col,'hover_text','period','period_start']]:
+            agg_df['hover_text'] = pd.to_datetime(agg_df['period_start']).dt.strftime('%Y-%m-%d')
+
+        for c in [x for x in agg_df.columns if x not in [date_col, 'hover_text', 'period_end', 'period_start']]:
             c_title = self.convert_str_2_title(c)
-            if agg_df[c].dtype in ['float64', 'int64']:
-                val = agg_df[c].round(2).apply(lambda x: "{:,}".format(x))
-            else:
-                val = agg_df[c].astype(str)
+            val = agg_df[c].round(2).apply(lambda x: "{:,}".format(x)) if agg_df[c].dtype in ['float64', 'int64'] else agg_df[c].astype(str)
             agg_df['hover_text'] = agg_df['hover_text'] + '<br>' + c_title + ': ' + val
 
         return agg_df
@@ -511,7 +549,8 @@ class DateBarPlotter(DatePlotter):
                  granularity='daily',
                  incomplete_drop=False,
                  days_back=30,
-                 figsize=[600, 271]):
+                 figsize=[600, 271],
+                 y_range=None):
         
         # Apply filters
         self.apply_filters(filters)
@@ -524,14 +563,14 @@ class DateBarPlotter(DatePlotter):
         if incomplete_drop and granularity in ['weekly', 'monthly']:
             self.drop_incomplete_last_period_if_requested(date_col)
             
-        group_cols = ['period','period_start'] + ([segment_col] if segment_col else [])
+        group_cols = ['period_start','period_end'] + ([segment_col] if segment_col else [])
         
         data_grouped = self.df.groupby(group_cols)[target_col].sum().reset_index()
         if segment_col:
             data_grouped[segment_col] = data_grouped[segment_col].astype(str)
         
         if part_of_whole == True:
-            data_grouped[f'total_{target_col}'] = data_grouped.groupby('period')[target_col].transform('sum')
+            data_grouped[f'total_{target_col}'] = data_grouped.groupby('period_start')[target_col].transform('sum')
             data_grouped[f'{target_col}_percentage'] = data_grouped[target_col] / data_grouped[f'total_{target_col}'] * 100
 
         data_grouped = self.compile_hover_tooltip(data_grouped, date_col, granularity)
@@ -539,7 +578,6 @@ class DateBarPlotter(DatePlotter):
         # Convert period back to a suitable date representation for plotting
         # We'll use the start of the period for the x-axis
         data_grouped[date_col] = data_grouped['period_start']
-        data_grouped.drop(columns='period', inplace=True)
         self.test = data_grouped
         fig = go.Figure()
         
@@ -578,7 +616,8 @@ class DateBarPlotter(DatePlotter):
             width=figsize[0],
             height=figsize[1]
         )
-
+        if y_range is not None:
+            fig.update_yaxes(range=y_range)
         if (data_grouped.shape[0] / len(fig.data)) < 10:
             fig.update_layout(
                         xaxis={**self.axis_dict, 
@@ -594,3 +633,29 @@ class DateBarPlotter(DatePlotter):
                 
 
         return fig
+    
+class LegendPlotter:
+    def __init__(self, labels):
+        self.labels = sorted(labels)
+        self.colors = ["#ae37ff", "#ab8bff", "#bbc6e2",
+                       "#8fb3e0", "#98c8d9", "#92e4c3",
+                       "#91de73", "#bdf07f", "#e5f993"]
+        if len(self.labels) > len(self.colors):
+            raise ValueError(f"Too many labels: max {len(self.colors)}, got {len(self.labels)}.")
+        self.color_map = {str(lbl): self.colors[i] for i, lbl in enumerate(self.labels)}
+        self.legend_dict = dict(orientation="h", x=0.5, y=1,
+                                xanchor="center", yanchor="top",
+                                font=dict(size=12), borderwidth=0)
+
+    def get_legend_figure(self):
+        fig = go.Figure()
+        for lbl in self.labels:
+            fig.add_trace(go.Scatter(x=[None], y=[None], mode='markers',
+                                     name=str(lbl),
+                                     marker=dict(color=self.color_map[str(lbl)], size=10)))
+        fig.update_layout(legend=self.legend_dict, height=20,
+                          margin=dict(l=0, r=0, t=0, b=0, pad=0),
+                          xaxis=dict(visible=False), yaxis=dict(visible=False),
+                          plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)')
+        return fig
+
